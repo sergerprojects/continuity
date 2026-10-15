@@ -6,6 +6,8 @@ let side = 'all';
 let loadVersion = 0;
 const kinds = ['visit','test','procedure','symptom','context','records','planning','gap'];
 const kindNames = {visit:'Clinical visit',test:'Hearing test',procedure:'Procedure',symptom:'Reported symptoms',context:'Background',records:'Records activity',planning:'Planning',gap:'Record gap'};
+const storyText=e=>e.story||e.text;
+const storyTitle=e=>e.storyTitle||e.title;
 const isClinical = event => !['records','planning'].includes(event.kind);
 function validate(data) {
   if (!data || data.format !== 'continuity-v1') throw new Error('Choose a Continuity history file (.json).');
@@ -16,11 +18,13 @@ function validate(data) {
   if (!Array.isArray(data.events)||!data.events.length||data.events.length>500||!Array.isArray(data.sources)||data.sources.length>100) throw new Error('This history file has an invalid event or source list.');
   for (const key of ['questions','conflicts','missing']) if (!Array.isArray(data[key])||data[key].length>100||!data[key].every(v=>str(v))) throw new Error('This history file has an invalid '+key+' list.');
   if (!Array.isArray(data.summary)||data.summary.length>4||!data.summary.every(v=>v&&['label','title','text'].every(k=>str(v[k])))) throw new Error('This history file has an invalid overview.');
+  if(data.storyGoal!==undefined&&!str(data.storyGoal))throw new Error('Invalid story goal.');
   const ids=new Set();
   data.sources.forEach(s=>{if(!s||!str(s.id,16)||!/^[A-Za-z0-9_-]+$/.test(s.id)||ids.has(s.id)||!str(s.title)||!str(s.note)) throw new Error('Invalid or duplicate source reference.');ids.add(s.id);});
   data.events.forEach(e=>{
-    if(!e||!['title','date','year','text','evidence'].every(k=>str(e[k]))||(e.briefText!==undefined&&!str(e.briefText))||!kinds.includes(e.kind)||!Array.isArray(e.sides)||!e.sides.every(s=>['left','right'].includes(s))||!Array.isArray(e.sources)||!e.sources.every(id=>ids.has(id))) throw new Error('An event has an invalid date, category, or source reference.');
+    if(!e||!['title','date','year','text','evidence'].every(k=>str(e[k]))||(['briefText','story','storyTitle','storyDate','storyPrintText'].some(k=>e[k]!==undefined&&!str(e[k])))||(e.keyEvent!==undefined&&typeof e.keyEvent!=='boolean')||!kinds.includes(e.kind)||!Array.isArray(e.sides)||!e.sides.every(s=>['left','right'].includes(s))||!Array.isArray(e.sources)||!e.sources.every(id=>ids.has(id))) throw new Error('An event has an invalid date, category, or source reference.');
   });
+  if(data.storyBrief!==undefined&&(!Array.isArray(data.storyBrief)||!data.storyBrief.every(i=>Number.isInteger(i)&&i>=0&&i<data.events.length)))throw new Error('Invalid story milestone reference.');
   if(!Array.isArray(data.brief)||!data.brief.every(i=>Number.isInteger(i)&&i>=0&&i<data.events.length)) throw new Error('The doctor brief has an invalid event reference.');
   return data;
 }
@@ -29,12 +33,12 @@ function errorMessage(text) {$('error').textContent=text;$('error').hidden=false
 function load(data,isDemo=false) {
   validate(data);
   history=data;side='all';
-  $('search').value='';$('activity').checked=false;
+  $('search').value='';$('activity').checked=false;$('all-events').checked=false;
   document.querySelectorAll('[data-ear]').forEach(b=>{const selected=b.dataset.ear==='all';b.classList.toggle('selected',selected);b.setAttribute('aria-pressed',selected);});
   $('person-label').textContent=data.person.toUpperCase()+' / PERSONAL HISTORY';
   $('history-title').textContent=data.title;$('intro').textContent=data.intro;
   $('updated').textContent='Reviewed '+dateLabel(data.updated);
-  $('event-count').textContent=data.events.filter(isClinical).length+' clinical entries';
+  $('event-count').textContent=data.events.filter(e=>isClinical(e)&&e.keyEvent!==false).length+' key events';
   $('footer-date').textContent='Source review · '+dateLabel(data.updated);
   $('record-note').textContent=data.note;
   $('summary-cards').innerHTML=data.summary.map(s=>`<article class="summary-card"><div class="card-label">${esc(s.label)}</div><h3>${esc(s.title)}</h3><p>${esc(s.text)}</p></article>`).join('');
@@ -47,22 +51,24 @@ function load(data,isDemo=false) {
 function render() {
   if(!history)return;
   const query=$('search').value.trim().toLowerCase();
-  const events=history.events.filter(e=>(side==='all'||e.sides.includes(side))&&($('activity').checked||isClinical(e))&&(!query||[e.title,e.text,e.date,e.evidence,...e.sources].join(' ').toLowerCase().includes(query)));
+  const events=history.events.filter(e=>(side==='all'||e.sides.includes(side))&&($('activity').checked||isClinical(e))&&($('all-events').checked||$('activity').checked||query||e.keyEvent!==false)&&(!query||[e.title,e.text,e.story||'',e.storyTitle||'',e.date,e.storyDate||'',e.evidence,...e.sources].join(' ').toLowerCase().includes(query)));
   $('visible-count').textContent=events.length+' '+(events.length===1?'entry':'entries');
   const groups=new Map();for(const e of events){if(!groups.has(e.year))groups.set(e.year,[]);groups.get(e.year).push(e);}
-  $('timeline-events').innerHTML=events.length?[...groups].map(([year,list])=>`<div class="era"><div class="era-label">${esc(year)}<span>${list.length} ${list.length===1?'ENTRY':'ENTRIES'}</span></div><div class="event-stack">${list.map(e=>`<article class="event ${e.kind}"><div class="event-top"><span class="event-date">${esc(e.date)}</span><span class="tag ${e.kind}">${esc(kindNames[e.kind])}</span></div><h3>${esc(e.title)}</h3><p>${esc(e.text)}</p><details><summary>Evidence & sources</summary><div class="event-source">${esc(e.evidence)}<div>${e.sources.map(id=>`<a class="source-ref" href="#source-${esc(id)}">${esc(id)} ↗</a>`).join('')}</div></div></details></article>`).join('')}</div></div>`).join(''):'<p class="empty">No entries match. Try another ear or search, or include records activity.</p>';
+  $('timeline-events').innerHTML=events.length?[...groups].map(([year,list])=>`<div class="era"><div class="era-label">${esc(year)}<span>${list.length} ${list.length===1?'ENTRY':'ENTRIES'}</span></div><div class="event-stack">${list.map(e=>`<article class="event ${e.kind}"><div class="event-top"><span class="event-date">${esc(e.storyDate||e.date)}</span><span class="tag ${e.kind}">${esc(kindNames[e.kind])}</span></div><h3>${esc(storyTitle(e))}</h3><p>${esc(storyText(e))}</p><details><summary>Medical detail & sources</summary><div class="event-source">${e.story||e.storyTitle||e.storyDate?`<p><strong>${esc(e.date)} · ${esc(e.title)}</strong></p><p>${esc(e.text)}</p>`:''}${esc(e.evidence)}<div>${e.sources.map(id=>`<a class="source-ref" href="#source-${esc(id)}">${esc(id)} ↗</a>`).join('')}</div></div></details></article>`).join('')}</div></div>`).join(''):'<p class="empty">No entries match. Try another ear or search, or include records activity.</p>';
 }
 function buildPrint(full=false) {
   if(!history)return;
   const d=history;
+  const brief=d.storyBrief||d.brief;
+  $('print-document').classList.toggle('story-print',!full&&Boolean(d.storyBrief));
   const sourceText=e=>`${e.evidence}${e.sources.length?' · Sources: '+e.sources.join(', '):''}`;
-  const heading=`<div class="print-kicker">CONFIDENTIAL · PERSONAL MEDICAL HISTORY${!$('demo-banner').hidden?' · FICTIONAL EXAMPLE':''}</div><h1>${esc(d.person)} · ${esc(d.title)}</h1><p class="print-meta">Source review: ${esc(dateLabel(d.updated))} · Printed: ${esc(new Date().toLocaleDateString('en-US'))} · ${full?'Full history':'Appointment brief'}</p><p>${esc(d.intro)}</p><div class="print-cover-note">${esc(d.note)}</div>`;
+  const heading=`<div class="print-kicker">CONFIDENTIAL · PERSONAL MEDICAL HISTORY${!$('demo-banner').hidden?' · FICTIONAL EXAMPLE':''}</div><h1>${esc(d.person)} · ${esc(d.title)}</h1><p class="print-meta">Source review: ${esc(dateLabel(d.updated))} · Printed: ${esc(new Date().toLocaleDateString('en-US'))} · ${full?'Full medical history':'My story in plain English'}</p><p>${esc(d.intro)}</p><div class="print-cover-note">${esc(d.note)}</div>`;
   const summary=`<div class="print-grid">${d.summary.map(s=>`<div><h3>${esc(s.label)} · ${esc(s.title)}</h3><p>${esc(s.text)}</p></div>`).join('')}</div>`;
-  const eventList=(full?d.events:d.brief.map(i=>d.events[i])).map(e=>`<article class="${full?'full-event':'print-event'}"><h3>${esc(e.date)} · ${esc(e.title)}</h3><p>${esc(full?e.text:(e.briefText||e.text))}</p><p class="print-source">${esc(sourceText(e))}</p></article>`).join('');
-  const lists=`<h2>Questions for the visit</h2><ol>${d.questions.map(t=>`<li>${esc(t)}</li>`).join('')}</ol><h2>Unresolved history and records</h2><ul class="print-uncertainty">${d.conflicts.map(t=>`<li>${esc(t)}</li>`).join('')}</ul><h2>Records still to locate</h2><ul class="print-uncertainty">${d.missing.map(t=>`<li>${esc(t)}</li>`).join('')}</ul>`;
-  const relevant=full?new Set(d.sources.map(s=>s.id)):new Set(d.brief.flatMap(i=>d.events[i].sources));
-  const sources=`<h2>Source key</h2>${d.sources.filter(s=>relevant.has(s.id)).map(s=>`<div class="print-source-row"><strong>${esc(s.id)} · ${esc(s.title)}</strong> — ${esc(s.note)}</div>`).join('')}`;
-  $('print-document').innerHTML=heading+summary+`<h2>${full?'Complete chronology':'Key clinical milestones'}</h2>`+eventList+lists+sources+'<h2>Visit notes</h2><div class="notes-line"></div><div class="notes-line"></div>';
+  const eventList=(full?d.events:brief.map(i=>d.events[i])).map(e=>`<article class="${full?'full-event':'print-event'}"><h3>${esc(full?e.date:(e.storyDate||e.date))} · ${esc(full?e.title:storyTitle(e))}</h3><p>${esc(full?e.text:(d.storyBrief?(e.storyPrintText||storyText(e)):(e.briefText||storyText(e))))}</p><p class="print-source">${esc(sourceText(e))}</p></article>`).join('');
+  const lists=(full||!d.storyBrief)?`<h2>Questions for the visit</h2><ol>${d.questions.map(t=>`<li>${esc(t)}</li>`).join('')}</ol><h2>Unresolved history and records</h2><ul class="print-uncertainty">${d.conflicts.map(t=>`<li>${esc(t)}</li>`).join('')}</ul><h2>Records still to locate</h2><ul class="print-uncertainty">${d.missing.map(t=>`<li>${esc(t)}</li>`).join('')}</ul>`:`<h2>What I want help with</h2><p>${esc(d.storyGoal||d.questions.join(' '))}</p>`;
+  const relevant=full?new Set(d.sources.map(s=>s.id)):new Set(brief.flatMap(i=>d.events[i].sources));
+  const sources=(full||!d.storyBrief)?`<h2>Source key</h2>${d.sources.filter(s=>relevant.has(s.id)).map(s=>`<div class="print-source-row"><strong>${esc(s.id)} · ${esc(s.title)}</strong> — ${esc(s.note)}</div>`).join('')}`:'<p class="print-source">The full medical notes and source references are kept in the detailed history.</p>';
+  $('print-document').innerHTML=heading+summary+`<h2>${full?'Complete medical chronology':'The sequence of events'}</h2>`+eventList+lists+sources+(full||!d.storyBrief?'<h2>Visit notes</h2><div class="notes-line"></div><div class="notes-line"></div>':'');
 }
 function printView(full=false) {if(history){buildPrint(full);window.print();}}
 async function openFile(file) {
@@ -77,7 +83,7 @@ $('open-file').addEventListener('click',()=>$('file-input').click());
 $('file-input').addEventListener('change',e=>openFile(e.target.files[0]));
 $('close-file').addEventListener('click',()=>{loadVersion++;history=null;side='all';for(const id of ['person-label','history-title','intro','updated','event-count','footer-date','record-note','summary-cards','timeline-events','question-list','conflict-list','missing-list','source-list','print-document','visible-count']) $(id).replaceChildren();$('search').value='';$('file-input').value='';$('workspace').hidden=true;$('welcome').hidden=false;$('close-file').hidden=true;$('error').hidden=true;window.scrollTo(0,0);$('open-file').focus();});
 for(const b of document.querySelectorAll('[data-ear]'))b.addEventListener('click',()=>{side=b.dataset.ear;document.querySelectorAll('[data-ear]').forEach(el=>{const selected=el===b;el.classList.toggle('selected',selected);el.setAttribute('aria-pressed',selected);});render();});
-$('search').addEventListener('input',render);$('activity').addEventListener('change',render);
+$('search').addEventListener('input',render);$('activity').addEventListener('change',render);$('all-events').addEventListener('change',render);
 $('print-brief').addEventListener('click',()=>printView(false));$('print-full').addEventListener('click',()=>printView(true));
 window.addEventListener('afterprint',()=>$('print-document').replaceChildren());
 window.addEventListener('beforeprint',()=>{if(history&&!$('print-document').childElementCount)buildPrint(false);});

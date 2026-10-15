@@ -18,4 +18,8 @@ Deploy only `site/` with the included GitHub Pages workflow. `tools/check-public
 
 ## Print
 
-Print doctor brief includes the overview, selected milestones, questions, unresolved items and source key. Print full history includes every event regardless of screen filters. The browser's own print command defaults to the doctor brief. Disable browser headers/footers for the cleanest PDF.
+Print my story uses the selected plain-English milestones and a short goal when the file supplies them. Older files keep their appointment brief. Print full history includes every event regardless of screen filters. The browser's own print command defaults to the short version. Disable browser headers/footers for the cleanest PDF.
+
+## Story view
+
+Files may supply storyTitle, story, storyDate and keyEvent on each event. Key events appear first; Show every event reveals the full clinical chronology and search includes the hidden events. Medical transcription remains available under each event. A storyBrief selects print milestones; storyGoal provides an explicit short goal, otherwise all questions are retained. Private standalone copies can embed the local data and viewer for offline use; these documents must remain outside this repository.
