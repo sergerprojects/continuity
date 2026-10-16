@@ -81,7 +81,7 @@ async function openFile(file) {
 }
 $('open-file').addEventListener('click',()=>$('file-input').click());
 $('file-input').addEventListener('change',e=>openFile(e.target.files[0]));
-$('close-file').addEventListener('click',()=>{loadVersion++;history=null;side='all';for(const id of ['person-label','history-title','intro','updated','event-count','footer-date','record-note','summary-cards','timeline-events','question-list','conflict-list','missing-list','source-list','print-document','visible-count']) $(id).replaceChildren();$('search').value='';$('file-input').value='';$('workspace').hidden=true;$('welcome').hidden=false;$('close-file').hidden=true;$('error').hidden=true;window.scrollTo(0,0);$('open-file').focus();});
+$('close-file').addEventListener('click',()=>{loadVersion++;history=null;side='all';for(const id of ['person-label','history-title','intro','updated','event-count','footer-date','record-note','summary-cards','timeline-events','question-list','conflict-list','missing-list','source-list','print-document','visible-count']) $(id).replaceChildren();$('search').value='';$('file-input').value='';$('workspace').hidden=true;$('welcome').hidden=false;$('close-file').hidden=true;$('error').hidden=true;window.scrollTo(0,0);$('passphrase').focus();});
 for(const b of document.querySelectorAll('[data-ear]'))b.addEventListener('click',()=>{side=b.dataset.ear;document.querySelectorAll('[data-ear]').forEach(el=>{const selected=el===b;el.classList.toggle('selected',selected);el.setAttribute('aria-pressed',selected);});render();});
 $('search').addEventListener('input',render);$('activity').addEventListener('change',render);$('all-events').addEventListener('change',render);
 $('print-brief').addEventListener('click',()=>printView(false));$('print-full').addEventListener('click',()=>printView(true));
@@ -90,3 +90,30 @@ window.addEventListener('beforeprint',()=>{if(history&&!$('print-document').chil
 const sectionObserver=new IntersectionObserver(entries=>{for(const entry of entries)if(entry.isIntersecting){for(const a of document.querySelectorAll('.sidebar a'))a.classList.toggle('active',a.hash==='#'+entry.target.id);}},{rootMargin:'-5% 0px -65% 0px'});
 for(const id of ['overview','timeline','questions','sources'])sectionObserver.observe($(id));
 $('demo').addEventListener('click',()=>{loadVersion++;load({format:'continuity-v1',person:'Example patient',title:'A clearer picture.',updated:'2026-01-15',intro:'A fictional example showing how visits, tests, and your own observations come together in one useful record.',note:'Example information only. Open your private file to see your own history. Historical records are separate from a current examination.',summary:[{label:'LEFT EAR',title:'A documented starting point',text:'Tests and observations are kept together, with the source and date attached.'},{label:'RIGHT EAR',title:'Room for the full story',text:'Your experience matters alongside what a test measures.'}],questions:['What has changed since the last test?','Which next step would best address my daily listening needs?'],conflicts:['A remembered date differs from the chart. Both are retained until clarified.'],missing:['An older test report is still to locate.'],sources:[{id:'EX1',title:'Fictional clinic note',note:'An illustrative source, not a real medical document.'}],brief:[0,1,2],events:[{date:'September 2024',year:'2024',title:'A first conversation',kind:'visit',sides:['left','right'],text:'A clinician records concerns, goals, and a plan for testing.',evidence:'Fictional chart example',sources:['EX1']},{date:'March 2025',year:'2025',title:'A baseline to compare',kind:'test',sides:['left','right'],text:'A hearing test becomes a dated reference for future conversations.',evidence:'Fictional test example',sources:['EX1']},{date:'January 2026',year:'2026',title:'What matters in daily life',kind:'symptom',sides:['left'],text:'Listening in company remains an important goal to discuss at the next visit.',evidence:'Fictional patient observation',sources:['EX1']} ]},true);});
+
+// The only network read is the encrypted snapshot on this same site.
+$('show-passphrase').addEventListener('click',()=>{const visible=$('passphrase').type==='password';$('passphrase').type=visible?'text':'password';$('show-passphrase').textContent=visible?'Hide':'Show';$('show-passphrase').setAttribute('aria-pressed',visible);});
+$('unlock-form').addEventListener('submit',async event=>{
+  event.preventDefault();
+  const version=++loadVersion;
+  let passphrase=$('passphrase').value.trim();
+  $('passphrase').value='';$('passphrase').type='password';$('show-passphrase').textContent='Show';$('show-passphrase').setAttribute('aria-pressed','false');
+  $('unlock').disabled=true;$('error').hidden=true;$('unlock-status').textContent='Unlocking your story…';
+  try{
+    if(!globalThis.crypto?.subtle)throw new Error('Use the secure website link in Safari or Chrome to unlock your story.');
+    const response=await fetch('history.enc.json',{cache:'no-store',credentials:'omit',redirect:'error'});
+    if(!response.ok)throw new Error('The history could not be loaded. Check your connection and try again.');
+    const raw=await response.text();
+    if(raw.length>3000000)throw new Error('The encrypted history could not be read.');
+    const envelope=JSON.parse(raw);
+    if(envelope.format!=='continuity-encrypted-v1'||envelope.iterations!==600000)throw new Error('The encrypted history could not be read.');
+    const bytes=value=>Uint8Array.from(atob(value),c=>c.charCodeAt(0));
+    const salt=bytes(envelope.salt),iv=bytes(envelope.iv),ciphertext=bytes(envelope.ciphertext);
+    if(salt.length!==16||iv.length!==12||ciphertext.length<16)throw new Error('The encrypted history could not be read.');
+    const material=await crypto.subtle.importKey('raw',new TextEncoder().encode(passphrase),'PBKDF2',false,['deriveKey']);passphrase='';
+    const key=await crypto.subtle.deriveKey({name:'PBKDF2',hash:'SHA-256',salt,iterations:600000},material,{name:'AES-GCM',length:256},false,['decrypt']);
+    const plaintext=await crypto.subtle.decrypt({name:'AES-GCM',iv},key,ciphertext);
+    if(version===loadVersion)load(JSON.parse(new TextDecoder().decode(plaintext)));
+  }catch(error){if(version===loadVersion)errorMessage(error.name==='OperationError'?'That passphrase did not unlock the story. Try again.':error instanceof SyntaxError?'The encrypted history could not be read.':error.message);}
+  finally{passphrase='';$('unlock').disabled=false;$('unlock-status').textContent='';}
+});

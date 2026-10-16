@@ -1,25 +1,13 @@
 # Continuity
 
-A small, static personal-history viewer for GitHub Pages. Open a private `continuity-v1` JSON file in the browser to view its timeline, source references, questions and printable doctor brief.
+A lightweight personal history viewer with a phone-friendly unlock screen and printable plain-English story.
 
-## Privacy
+Only `site/` is deployed to GitHub Pages. The hosted history is encrypted using AES-256-GCM and a strong random passphrase, with PBKDF2-SHA256 (600,000 iterations). The passphrase is kept separately in the owner's private iCloud guide. It is never included in Git, the deployed site, or the knowledge vault.
 
-Only the viewer and fictional example belong in this repository. Real history files, medical records, screenshots and printouts stay outside Git. The app uses the File API to read the chosen file into tab memory. There are no uploads, remote fonts, trackers, network calls, cookies or browser-storage writes. A Content Security Policy blocks network connections. Refreshing or choosing Close history clears the loaded record. Printed or saved PDFs are private copies managed by the user.
+Open the site in Safari or Chrome, enter the passphrase, and tap Unlock my story. Print my story produces the short patient handout; Print full history retains the medical chronology and source references. File import and a fictional example remain available.
 
-Never add a real history file to this repository, GitHub Actions or a Pages artifact. `site/` is the entire publication boundary. A private repository alone does not make a Pages website private.
+Decryption happens in the browser. No tracking, external fonts, server accounts, or browser storage. Lock history or refresh to clear the unlocked page. Anyone with both the passphrase and encrypted snapshot can read it. Previously downloaded encrypted snapshots remain decryptable with their corresponding passphrase.
 
-## Run
+For updates, regenerate the encrypted snapshot through the private local workflow. Keep originals, JSON, guides, passphrases, screenshots, and PDFs outside Git. Publish only the encrypted envelope and generic viewer.
 
-Run `python3 -m http.server 8765 --directory site` and open localhost:8765. No dependencies or build step.
-
-## Publish
-
-Deploy only `site/` with the included GitHub Pages workflow. `tools/check-public.py` checks the public file allowlist, network/storage APIs, and absence of known private-data markers. Real records are maintained separately in the owner's private vault.
-
-## Print
-
-Print my story uses the selected plain-English milestones and a short goal when the file supplies them. Older files keep their appointment brief. Print full history includes every event regardless of screen filters. The browser's own print command defaults to the short version. Disable browser headers/footers for the cleanest PDF.
-
-## Story view
-
-Files may supply storyTitle, story, storyDate and keyEvent on each event. Key events appear first; Show every event reveals the full clinical chronology and search includes the hidden events. Medical transcription remains available under each event. A storyBrief selects print milestones; storyGoal provides an explicit short goal, otherwise all questions are retained. Private standalone copies can embed the local data and viewer for offline use; these documents must remain outside this repository.
+Checks: `python3 tools/check-public.py`, `node --check site/app.js`, browser unlock/wrong-passphrase/lock/print/mobile checks, and Codex review.
